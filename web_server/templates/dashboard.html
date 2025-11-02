@@ -1,0 +1,7 @@
+<h1>📊 Jumlah Ikan per Hari</h1>
+<table border="1" cellpadding="8" style="margin:auto;">
+<tr><th>Tanggal</th><th>Jumlah Ikan</th></tr>
+{% for d in data %}
+<tr><td>{{ d.date }}</td><td>{{ d.fish_count }}</td></tr>
+{% endfor %}
+</table>
