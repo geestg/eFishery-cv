@@ -1,6 +1,7 @@
 from flask import Flask, render_template, send_from_directory, jsonify, request, send_file, Response
 import os
 import json
+import re
 from datetime import datetime
 
 app = Flask(__name__)
@@ -20,8 +21,10 @@ def dashboard():
     results_log = []
     if os.path.exists(log_path):
         with open(log_path, 'r') as f:
-            results_log = json.load(f)
-
+            try:
+                results_log = json.load(f)
+            except json.JSONDecodeError:
+                results_log = []
     return render_template('dashboard.html', results_log=results_log)
 
 
@@ -66,23 +69,44 @@ def upload_file():
 
 
 # =========================
-# ROUTE: STREAM VIDEO (fix agar bisa diputar di browser)
+# ROUTE: STREAM VIDEO (support byte-range agar bisa diputar)
 # =========================
 @app.route('/video/<filename>')
 def stream_video(filename):
-    path = os.path.join('static', 'videos', filename)
-    if not os.path.exists(path):
+    video_path = os.path.join('static', 'videos', filename)
+    if not os.path.exists(video_path):
         return "Video tidak ditemukan", 404
 
-    def generate():
-        with open(path, "rb") as f:
-            while True:
-                data = f.read(1024 * 1024)  # stream per 1 MB
-                if not data:
-                    break
-                yield data
+    range_header = request.headers.get('Range', None)
+    if not range_header:
+        # Jika browser tidak minta partial content, kirim full video
+        return send_file(video_path, mimetype='video/mp4')
 
-    return Response(generate(), mimetype="video/mp4")
+    # ---- Handle byte-range requests ----
+    size = os.path.getsize(video_path)
+    byte1, byte2 = 0, None
+    m = re.search(r'(\d+)-(\d*)', range_header)
+    if m:
+        g = m.groups()
+        byte1 = int(g[0])
+        if g[1]:
+            byte2 = int(g[1])
+
+    length = size - byte1
+    if byte2 is not None:
+        length = byte2 - byte1 + 1
+
+    with open(video_path, 'rb') as f:
+        f.seek(byte1)
+        data = f.read(length)
+
+    # ---- Response partial stream ----
+    rv = Response(data, 206, mimetype='video/mp4', direct_passthrough=True)
+    rv.headers.add('Content-Range', f'bytes {byte1}-{byte1 + length - 1}/{size}')
+    rv.headers.add('Accept-Ranges', 'bytes')
+    rv.headers.add('Content-Length', str(length))
+    rv.headers.add('Content-Disposition', f'inline; filename={filename}')  # ✅ FIX UTAMA
+    return rv
 
 
 # =========================
@@ -91,6 +115,15 @@ def stream_video(filename):
 @app.route('/static/videos/<path:filename>')
 def serve_video(filename):
     return send_from_directory('static/videos', filename)
+
+
+# =========================
+# TAMBAHAN HEADER (untuk dukung browser caching & seek)
+# =========================
+@app.after_request
+def add_headers(response):
+    response.headers['Accept-Ranges'] = 'bytes'
+    return response
 
 
 # =========================
