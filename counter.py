@@ -3,6 +3,10 @@ import cv2
 import os
 import csv
 import torch
+import time
+import json
+import requests
+from datetime import datetime
 from ultralytics.nn.tasks import DetectionModel
 from ultralytics.nn.modules.conv import Conv
 from torch.nn.modules.container import Sequential
@@ -16,55 +20,48 @@ torch.serialization.add_safe_globals([DetectionModel, Sequential, Conv, Conv2d, 
 # =========================
 # KONFIGURASI
 # =========================
-model_path = r"D:\eFishery-cv\train_ikan_mas_v1\weights\best.pt"
-video_path = r"D:\eFishery-cv\efishery_yolov8\videos\mas1.mp4"
-output_path = r"D:\eFishery-cv\output\output_tracking_counter.mp4"
-csv_path = r"D:\eFishery-cv\output\fish_tracking_log.csv"
-
-os.makedirs(os.path.dirname(output_path), exist_ok=True)
+MODEL_PATH = r"D:\eFishery-cv\train_ikan_mas_v1\weights\best.pt"
+IP_CAM_URL = "http://172.27.80.94:8080/video"  # pastikan IP Webcam aktif
+SERVER_URL = "http://127.0.0.1:5000/upload"    # Flask endpoint
+OUTPUT_FOLDER = "output"
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+DURATION = 180  # detik (3 menit)
 
 # =========================
-# LOAD MODEL
+# LOAD MODEL YOLOv8
 # =========================
 print("[INFO] Loading YOLOv8 model with BOTSort (counter.yaml)...")
-model = YOLO(model_path)
+model = YOLO(MODEL_PATH)
 
 # =========================
-# BUKA VIDEO
+# BUKA STREAM DARI IP CAM
 # =========================
-cap = cv2.VideoCapture(video_path)
+cap = cv2.VideoCapture(IP_CAM_URL)
 if not cap.isOpened():
-    print(f"[ERROR] Gagal membuka video: {video_path}")
-    exit()
+    raise Exception("Tidak dapat membuka IP Webcam! Pastikan kamera menyala dan URL benar.")
 
-fps = int(cap.get(cv2.CAP_PROP_FPS))
+fps = 20.0
 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
-total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-print(f"[INFO] Video terbuka ({width}x{height}, {fps} fps, {total_frames} frame).")
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+video_name = f"fish_{timestamp}.mp4"
+output_video_path = os.path.join(OUTPUT_FOLDER, video_name)
+csv_path = os.path.join(OUTPUT_FOLDER, f"fish_{timestamp}.csv")
+out = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
 
-# =========================
-# TRACKING
-# =========================
+print(f"[INFO] Mulai merekam dari IP Webcam selama {DURATION/60} menit...")
+start_time = time.time()
 tracked_ids = set()
-frame_num = 0
-
-# Warna & font modern
 font = cv2.FONT_HERSHEY_DUPLEX
-color_active = (57, 255, 20)
-color_unique = (0, 255, 255)
-color_id = (255, 100, 100)
-color_box = (255, 60, 60)
 
 # =========================
 # CSV LOG
 # =========================
 with open(csv_path, mode='w', newline='') as csv_file:
-    fieldnames = ['Frame', 'Fish_ID', 'Center_X', 'Center_Y']
-    writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+    writer = csv.DictWriter(csv_file, fieldnames=['Frame', 'Fish_ID', 'Center_X', 'Center_Y'])
     writer.writeheader()
 
+    frame_num = 0
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -74,10 +71,6 @@ with open(csv_path, mode='w', newline='') as csv_file:
         results = model.track(source=frame, persist=True, tracker='counter.yaml')
         annotated_frame = results[0].plot()
 
-        margin_x, margin_y = int(width * 0.1), int(height * 0.1)
-        cv2.rectangle(annotated_frame, (margin_x, margin_y),
-                      (width - margin_x, height - margin_y), (255, 255, 255), 2)
-
         current_ids = []
         if results[0].boxes.id is not None:
             ids = results[0].boxes.id.int().tolist()
@@ -86,45 +79,67 @@ with open(csv_path, mode='w', newline='') as csv_file:
             for i, box_id in enumerate(ids):
                 x1, y1, x2, y2 = map(int, boxes[i])
                 center_x, center_y = int((x1 + x2) / 2), int((y1 + y2) / 2)
+                tracked_ids.add(box_id)
+                current_ids.append(box_id)
 
-                if margin_x < center_x < width - margin_x and margin_y < center_y < height - margin_y:
-                    current_ids.append(box_id)
-                    tracked_ids.add(box_id)
+                writer.writerow({'Frame': frame_num, 'Fish_ID': box_id,
+                                 'Center_X': center_x, 'Center_Y': center_y})
+                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(annotated_frame, f"ID {box_id}", (x1, y1 - 5),
+                            font, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
 
-                    # Buat overlay label semi transparan
-                    overlay = annotated_frame.copy()
-                    cv2.rectangle(overlay, (x1, y1 - 25), (x1 + 130, y1), color_box, -1)
-                    annotated_frame = cv2.addWeighted(overlay, 0.6, annotated_frame, 0.4, 0)
-
-                    cv2.putText(annotated_frame, f"ID {box_id}", (x1 + 5, y1 - 7),
-                                font, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
-                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color_box, 2)
-
-                    writer.writerow({'Frame': frame_num, 'Fish_ID': box_id,
-                                     'Center_X': center_x, 'Center_Y': center_y})
-
-        # ========================
-        # MODERN OVERLAY
-        # ========================
-        cv2.putText(annotated_frame, f"Ikan aktif: {len(current_ids)}", (25, 45),
-                    font, 1.0, color_active, 2, cv2.LINE_AA)
-        cv2.putText(annotated_frame, f"Ikan unik total: {len(tracked_ids)}", (25, 85),
-                    font, 1.0, color_unique, 2, cv2.LINE_AA)
-
-        # Watermark bawah kanan
-        cv2.putText(annotated_frame, "eFishery Vision", (width - 240, height - 25),
-                    font, 0.7, (180, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(annotated_frame, f"Ikan aktif: {len(current_ids)}", (25, 40),
+                    font, 0.8, (57, 255, 20), 2, cv2.LINE_AA)
+        cv2.putText(annotated_frame, f"Ikan unik total: {len(tracked_ids)}", (25, 80),
+                    font, 0.8, (0, 255, 255), 2, cv2.LINE_AA)
 
         out.write(annotated_frame)
-        cv2.imshow("Fish Tracking (Counter.yaml) - Tekan Q untuk keluar", annotated_frame)
+        cv2.imshow("Fish Counting - eFishery Vision", annotated_frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+        if time.time() - start_time > DURATION:
+            print("[INFO] Rekaman selesai (3 menit).")
             break
 
 cap.release()
 out.release()
 cv2.destroyAllWindows()
 
-print(f"✅ Tracking selesai! Video disimpan di:\n{output_path}")
-print(f"📄 Log tracking disimpan di:\n{csv_path}")
-print(f"🎯 Total ikan unik terdeteksi: {len(tracked_ids)}")
+# =========================
+# SIMPAN HASIL COUNTING
+# =========================
+result_data = {
+    "Jumlah Ikan": len(tracked_ids),
+    "Ukuran Rata-rata (cm)": "Belum dikalibrasi",
+    "Nama Video": video_name,
+    "Waktu Deteksi": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+}
+
+result_json_path = os.path.join(OUTPUT_FOLDER, f"fish_{timestamp}.json")
+with open(result_json_path, "w") as f:
+    json.dump(result_data, f, indent=4)
+
+print(f"✅ Counting selesai! Video: {output_video_path}")
+print(f"📄 Log CSV: {csv_path}")
+print(f"🎯 Total ikan unik: {len(tracked_ids)}")
+
+# =========================
+# UPLOAD KE SERVER FLASK
+# =========================
+try:
+    with open(output_video_path, "rb") as video_file, open(result_json_path, "rb") as json_file:
+        files = {
+            'video': (os.path.basename(output_video_path), video_file, 'video/mp4'),
+            'json': (os.path.basename(result_json_path), json_file, 'application/json')
+        }
+        print("[INFO] Mengirim hasil ke server Flask...")
+        response = requests.post(SERVER_URL, files=files)
+
+    if response.status_code == 200:
+        print("[✅] Upload sukses ke server Flask!")
+    else:
+        print(f"[❌] Gagal upload: {response.status_code}, {response.text}")
+except Exception as e:
+    print(f"[ERROR] Tidak dapat upload ke server: {e}")
