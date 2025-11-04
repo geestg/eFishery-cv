@@ -6,6 +6,7 @@ import torch
 import time
 import json
 import requests
+import subprocess
 from datetime import datetime
 
 # --- FIX untuk PyTorch 2.6 ---
@@ -54,12 +55,9 @@ video_name = f"fish_{timestamp}.mp4"
 output_video_path = os.path.join(OUTPUT_FOLDER, video_name)
 csv_path = os.path.join(OUTPUT_FOLDER, f"fish_{timestamp}.csv")
 
-out = cv2.VideoWriter(
-    output_video_path,
-    cv2.VideoWriter_fourcc(*'mp4v'),
-    SAVE_FPS,
-    FRAME_RESIZE
-)
+# Gunakan codec H.264 agar bisa diputar di browser
+fourcc = cv2.VideoWriter_fourcc(*'avc1')
+out = cv2.VideoWriter(output_video_path, fourcc, SAVE_FPS, FRAME_RESIZE)
 
 print(f"[INFO] Mulai merekam dari IP Webcam selama {DURATION/60} menit...")
 start_time = time.time()
@@ -96,8 +94,8 @@ with open(csv_path, mode='w', newline='') as csv_file:
         )
 
         annotated_frame = results[0].plot()
-
         boxes_obj = results[0].boxes
+
         if boxes_obj is not None and boxes_obj.id is not None:
             ids = boxes_obj.id.int().tolist()
             boxes = boxes_obj.xyxy.tolist()
@@ -105,7 +103,6 @@ with open(csv_path, mode='w', newline='') as csv_file:
             for i, box_id in enumerate(ids):
                 x1, y1, x2, y2 = map(int, boxes[i])
                 center_x, center_y = int((x1 + x2) / 2), int((y1 + y2) / 2)
-
                 tracked_ids.add(int(box_id))
 
                 writer.writerow({
@@ -139,6 +136,23 @@ with open(csv_path, mode='w', newline='') as csv_file:
 cap.release()
 out.release()
 cv2.destroyAllWindows()
+
+# =========================
+# KONVERSI OTOMATIS KE H.264 (JIKA PERLU)
+# =========================
+converted_path = output_video_path.replace(".mp4", "_web.mp4")
+try:
+    subprocess.run([
+        "ffmpeg", "-y", "-i", output_video_path,
+        "-c:v", "libx264", "-preset", "veryfast",
+        "-crf", "28", "-pix_fmt", "yuv420p",
+        converted_path
+    ], check=True)
+    os.remove(output_video_path)
+    os.rename(converted_path, output_video_path)
+    print("[INFO] Video berhasil dikonversi ke format web-compatible (H.264).")
+except Exception as e:
+    print(f"[WARN] Gagal konversi video ke H.264: {e}")
 
 # =========================
 # SIMPAN HASIL COUNTING
