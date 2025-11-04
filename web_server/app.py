@@ -1,4 +1,4 @@
-from flask import Flask, render_template, send_from_directory, jsonify, request, send_file, Response
+from flask import Flask, render_template, send_from_directory, jsonify, request, send_file, Response, redirect, url_for
 import os
 import json
 import re
@@ -69,6 +69,36 @@ def upload_file():
 
 
 # =========================
+# ROUTE: HAPUS VIDEO + DATA LOG
+# =========================
+@app.route('/delete/<filename>', methods=['POST'])
+def delete_file(filename):
+    video_folder = os.path.join('static', 'videos')
+    log_path = os.path.join('static', 'results_log.json')
+
+    # Hapus file video
+    video_path = os.path.join(video_folder, filename)
+    if os.path.exists(video_path):
+        os.remove(video_path)
+        print(f"[SERVER] Video dihapus: {filename}")
+
+    # Hapus data dari results_log.json
+    if os.path.exists(log_path):
+        with open(log_path, 'r') as f:
+            try:
+                log_data = json.load(f)
+            except json.JSONDecodeError:
+                log_data = []
+        # Filter log tanpa data yang dihapus
+        log_data = [entry for entry in log_data if entry.get("Nama Video") != filename]
+        with open(log_path, 'w') as f:
+            json.dump(log_data, f, indent=4)
+        print(f"[SERVER] Log dihapus untuk: {filename}")
+
+    return redirect(url_for('dashboard'))
+
+
+# =========================
 # ROUTE: STREAM VIDEO (support byte-range agar bisa diputar)
 # =========================
 @app.route('/video/<filename>')
@@ -79,7 +109,6 @@ def stream_video(filename):
 
     range_header = request.headers.get('Range', None)
     if not range_header:
-        # Jika browser tidak minta partial content, kirim full video
         return send_file(video_path, mimetype='video/mp4')
 
     # ---- Handle byte-range requests ----
@@ -130,5 +159,4 @@ def add_headers(response):
 # MAIN APP
 # =========================
 if __name__ == '__main__':
-    # Jalankan Flask agar bisa diakses dari host dan Docker
     app.run(host='0.0.0.0', port=5000)

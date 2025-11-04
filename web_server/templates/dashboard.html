@@ -59,6 +59,17 @@
       font-weight: 600;
       margin-top: auto;
     }
+    .btn-delete {
+      border: none;
+      background-color: #dc3545;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 8px;
+      transition: 0.2s;
+    }
+    .btn-delete:hover {
+      background-color: #bb2d3b;
+    }
   </style>
 </head>
 <body>
@@ -86,6 +97,7 @@
               <th>Ukuran Rata-rata (cm)</th>
               <th>Waktu Deteksi</th>
               <th>Preview</th>
+              <th>Aksi</th>
             </tr>
           </thead>
           <tbody>
@@ -101,6 +113,12 @@
                   <source src="{{ url_for('stream_video', filename=res['Nama Video']) }}" type="video/mp4">
                   Browser Anda tidak mendukung video.
                 </video>
+              </td>
+              <td>
+                <form action="{{ url_for('delete_file', filename=res['Nama Video']) }}" method="POST"
+                      onsubmit="return confirm('Yakin ingin menghapus video ini?')">
+                  <button type="submit" class="btn-delete">🗑 Hapus</button>
+                </form>
               </td>
             </tr>
             {% endfor %}

@@ -22,7 +22,7 @@ torch.serialization.add_safe_globals([DetectionModel, Sequential, Conv, Conv2d, 
 # KONFIGURASI
 # =========================
 MODEL_PATH = r"D:\eFishery-cv\train_ikan_mas_v1\weights\best.pt"
-IP_CAM_URL = "http://172.27.67.108:8080/video"   # IP Webcam HP
+IP_CAM_URL = "http://172.27.67.220:8080/video"   # IP Webcam HP (pastikan sama dengan di HP)
 SERVER_URL = "http://127.0.0.1:5000/upload"      # endpoint Flask
 OUTPUT_FOLDER = "output"
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
@@ -73,13 +73,25 @@ with open(csv_path, mode='w', newline='') as csv_file:
 
     frame_num = 0
     while True:
+        # --- Anti-delay: buang frame yang menumpuk di buffer ---
+        for _ in range(2):
+            cap.grab()
+
         ret, frame = cap.read()
         if not ret:
             print("[WARN] Frame tidak terbaca dari IP cam, stop.")
             break
 
         frame_num += 1
+
+        # Resize dulu
         frame_resized = cv2.resize(frame, FRAME_RESIZE)
+
+        # --- Enhancement visual: kurangi noise + tambah kontras ---
+        # Gaussian blur ringan untuk meredam noise
+        frame_resized = cv2.GaussianBlur(frame_resized, (3, 3), 0)
+        # Tingkatkan kontras & sedikit brightness
+        frame_resized = cv2.convertScaleAbs(frame_resized, alpha=1.25, beta=8)
 
         # =========================
         # DETEKSI + TRACKING

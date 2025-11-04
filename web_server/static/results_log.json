@@ -1,20 +1,20 @@
 [
     {
-        "Jumlah Ikan": 6,
+        "Jumlah Ikan": 8,
         "Ukuran Rata-rata (cm)": "Belum dikalibrasi",
-        "Nama Video": "fish_20251103_214625.mp4",
-        "Waktu Deteksi": "2025-11-03 21:46:50"
+        "Nama Video": "fish_20251104_202727.mp4",
+        "Waktu Deteksi": "2025-11-04 20:27:56"
     },
     {
-        "Jumlah Ikan": 84,
+        "Jumlah Ikan": 4,
         "Ukuran Rata-rata (cm)": "Belum dikalibrasi",
-        "Nama Video": "fish_20251103_211519.mp4",
-        "Waktu Deteksi": "2025-11-03 21:15:42"
+        "Nama Video": "fish_20251104_200948.mp4",
+        "Waktu Deteksi": "2025-11-04 20:09:57"
     },
     {
-        "Jumlah Ikan": 2,
+        "Jumlah Ikan": 0,
         "Ukuran Rata-rata (cm)": "Belum dikalibrasi",
-        "Nama Video": "fish_20251103_204120.mp4",
-        "Waktu Deteksi": "2025-11-03 20:41:37"
+        "Nama Video": "fish_20251104_200902.mp4",
+        "Waktu Deteksi": "2025-11-04 20:09:08"
     }
 ]
